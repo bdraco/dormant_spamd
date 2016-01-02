@@ -396,7 +396,7 @@ sub main_server_poll {
   $self->adapt_num_children();
 }
 
-my $NUMBER_OF_LOOPS_TO_GO_DORMANT = 3;
+my $NUMBER_OF_LOOPS_TO_GO_DORMANT = 10;
 sub consider_going_dormant {
     my ($self) = @_;
 
@@ -407,9 +407,9 @@ sub consider_going_dormant {
             # Remove CLOEXEC
             foreach my $fileno ( values %{ $self->{backchannel}->{fileno_to_fh} } ) {
                 my $fh = $self->{backchannel}->{fileno_to_fh}->{$fileno};
-                $current_flags{$fileno} = fcntl( $fh, Fcntl::F_GETFD, 0 ) or warn "Failed to get flags on fileno: $fileno";
-                my $new_flags = $current_flags{$fileno} & ~Fcntl::FD_CLOEXEC;
-                fcntl( $fh, Fcntl::F_SETFD, $new_flags ) or warn "Failed to set flags on fileno: $fileno";
+                $current_flags{$fileno} = fcntl( $fh, &Fcntl::F_GETFD, 0 ) or warn "Failed to get flags on fileno: $fileno";
+                my $new_flags = $current_flags{$fileno} & ~&Fcntl::FD_CLOEXEC;
+                fcntl( $fh, &Fcntl::F_SETFD, $new_flags ) or warn "Failed to set flags on fileno: $fileno";
             }
             exec '/usr/local/cpanel/libexec/spamd-dormant', '--listen=' . join( ',', sort keys %{ $self->{backchannel}->{fileno_to_fh} } );    # Do not add or die as we want to continue running if this fails
         }
@@ -418,10 +418,10 @@ sub consider_going_dormant {
         # Restore flags
         foreach my $fileno ( values %{ $self->{backchannel}->{fileno_to_fh} } ) {
             my $fh = $self->{backchannel}->{fileno_to_fh}->{$fileno};
-            fcntl( $fh, Fcntl::F_SETFD, $current_flags{$fileno} ) or warn "Failed to restore flags on fileno: $fileno";
+            fcntl( $fh, &Fcntl::F_SETFD, $current_flags{$fileno} ) or warn "Failed to restore flags on fileno: $fileno";
 
         }
-
+        $self->{number_of_dormant_loops}=0;
     }
 
     warn "prefork: dormant loops: $self->{number_of_dormant_loops}";
