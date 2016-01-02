@@ -396,10 +396,10 @@ sub main_server_poll {
   $self->adapt_num_children();
 }
 
+my $NUMBER_OF_LOOPS_TO_GO_DORMANT = 3;
 sub consider_going_dormant {
     my ($self) = @_;
 
-    my $NUMBER_OF_LOOPS_TO_GO_DORMANT = 3;
     if ( ++$self->{number_of_dormant_loops} == $NUMBER_OF_LOOPS_TO_GO_DORMANT ) {
         my %current_flags;
         {
@@ -423,6 +423,10 @@ sub consider_going_dormant {
         }
 
     }
+
+    warn "prefork: dormant loops: $self->{number_of_dormant_loops}";
+
+    return;
 }
 
 sub main_ping_kids {
