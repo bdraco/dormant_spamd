@@ -397,39 +397,40 @@ sub main_server_poll {
 }
 
 my $NUMBER_OF_LOOPS_TO_GO_DORMANT = 3;
+
 sub consider_going_dormant {
     my ($self) = @_;
 
     if ( ++$self->{number_of_dormant_loops} == $NUMBER_OF_LOOPS_TO_GO_DORMANT ) {
         my %current_flags;
         my @cmdline;
-my @listen_args;
+        my @listen_args;
         {
             #go dormant
             # Remove CLOEXEC
-            foreach (my $i=0;$i<=$#{$self->{server_fh}};$i++) {
+            foreach ( my $i = 0; $i <= $#{ $self->{server_fh} }; $i++ ) {
                 my $fileno = $self->{server_fileno}->[$i];
-                my $fh = $self->{server_fh}->[$i];
+                my $fh     = $self->{server_fh}->[$i];
                 $current_flags{$fileno} = fcntl( $fh, Fcntl::F_GETFD(), 0 ) or warn "Failed to get flags on fileno: $fileno";
                 my $new_flags = $current_flags{$fileno} & ~&Fcntl::FD_CLOEXEC;
                 fcntl( $fh, Fcntl::F_SETFD(), $new_flags ) or warn "Failed to set flags on fileno: $fileno";
-                push @listen_args, $fileno . '=' . scalar ref $fh;
+                push @listen_args, $fileno . ':' . scalar ref $fh;
             }
-            @cmdline = ( '/usr/local/cpanel/libexec/spamd-dormant', '--listen=' . join( ',', @listen_args ));    # Do not add or die as we want to continue running if this fails
+            @cmdline = ( '/usr/local/cpanel/libexec/spamd-dormant', '--listen=' . join( ',', @listen_args ) );    # Do not add or die as we want to continue running if this fails
             exec(@cmdline);
         }
 
-
         warn "prefork: failed to exec @cmdline: $!";
+
         # Restore flags
-      foreach (my $i=0;$i<=$#{$self->{server_fh}};$i++) {
-                my $fileno = $self->{server_fileno}->[$i];
-                my $fh = $self->{server_fh}->[$i];
-       
+        foreach ( my $i = 0; $i <= $#{ $self->{server_fh} }; $i++ ) {
+            my $fileno = $self->{server_fileno}->[$i];
+            my $fh     = $self->{server_fh}->[$i];
+
             fcntl( $fh, Fcntl::F_SETFD(), $current_flags{$fileno} ) or warn "Failed to restore flags on fileno: $fileno";
 
         }
-        $self->{number_of_dormant_loops}=0;
+        $self->{number_of_dormant_loops} = 0;
     }
 
     warn "prefork: dormant loops: $self->{number_of_dormant_loops}";
