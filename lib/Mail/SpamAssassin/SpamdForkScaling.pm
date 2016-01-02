@@ -402,6 +402,7 @@ sub consider_going_dormant {
 
     if ( ++$self->{number_of_dormant_loops} == $NUMBER_OF_LOOPS_TO_GO_DORMANT ) {
         my %current_flags;
+        my @cmdline;
         {
             #go dormant
             # Remove CLOEXEC
@@ -411,10 +412,12 @@ sub consider_going_dormant {
                 my $new_flags = $current_flags{$fileno} & ~&Fcntl::FD_CLOEXEC;
                 fcntl( $fh, Fcntl::F_SETFD(), $new_flags ) or warn "Failed to set flags on fileno: $fileno";
             }
-            exec '/usr/local/cpanel/libexec/spamd-dormant', '--listen=' . join( ',', sort keys %{ $self->{backchannel}->{fileno_to_fh} } );    # Do not add or die as we want to continue running if this fails
+            @cmdline = ( '/usr/local/cpanel/libexec/spamd-dormant', '--listen=' . join( ',', map { "$_=" . ref $self->{backchannel}->{fileno_to_fh}->{$_}  } sort keys %{ $self->{backchannel}->{fileno_to_fh} } ));    # Do not add or die as we want to continue running if this fails
+            exec(@cmdline);
         }
 
-        warn "prefork: failed to exec /usr/local/cpanel/libexec/spamd-dormant: $!";
+
+        warn "prefork: failed to exec @cmdline: $!";
         # Restore flags
         foreach my $fileno ( keys %{ $self->{backchannel}->{fileno_to_fh} } ) {
             my $fh = $self->{backchannel}->{fileno_to_fh}->{$fileno};
