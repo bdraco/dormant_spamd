@@ -24,6 +24,7 @@ use warnings;
 use bytes;
 use re 'taint';
 use Errno qw();
+use Fcntl qw();
 
 use Mail::SpamAssassin::Util qw(am_running_on_windows);
 use Mail::SpamAssassin::Logger;
@@ -398,13 +399,29 @@ sub main_server_poll {
 sub consider_going_dormant {
     my ($self) = @_;
 
-    my $NUMBER_OF_LOOPS_TO_GO_DORMANT  = 3;
+    my $NUMBER_OF_LOOPS_TO_GO_DORMANT = 3;
     if ( ++$self->{number_of_dormant_loops} == $NUMBER_OF_LOOPS_TO_GO_DORMANT ) {
+        my %current_flags;
         {
             #go dormant
-            exec '/usr/local/cpanel/libexec/spamd-dormant', '--listen=' . join( ',', sort keys %{$self->{backchannel}->{fileno_to_fh}} );    # Do not add or die as we want to continue running if this fails
+            # Remove CLOEXEC
+            foreach my $fileno ( values %{ $self->{backchannel}->{fileno_to_fh} } ) {
+                my $fh = $self->{backchannel}->{fileno_to_fh}->{$fileno};
+                $current_flags{$fileno} = fcntl( $fh, Fcntl::F_GETFD, 0 ) or warn "Failed to get flags on fileno: $fileno";
+                my $new_flags = $current_flags{$fileno} & ~Fcntl::FD_CLOEXEC;
+                fcntl( $fh, Fcntl::F_SETFD, $new_flags ) or warn "Failed to set flags on fileno: $fileno";
+            }
+            exec '/usr/local/cpanel/libexec/spamd-dormant', '--listen=' . join( ',', sort keys %{ $self->{backchannel}->{fileno_to_fh} } );    # Do not add or die as we want to continue running if this fails
         }
+
         warn "prefork: failed to exec /usr/local/cpanel/libexec/spamd-dormant: $!";
+        # Restore flags
+        foreach my $fileno ( values %{ $self->{backchannel}->{fileno_to_fh} } ) {
+            my $fh = $self->{backchannel}->{fileno_to_fh}->{$fileno};
+            fcntl( $fh, Fcntl::F_SETFD, $current_flags{$fileno} ) or warn "Failed to restore flags on fileno: $fileno";
+
+        }
+
     }
 }
 
