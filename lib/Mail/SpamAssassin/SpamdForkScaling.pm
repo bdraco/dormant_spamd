@@ -405,8 +405,6 @@ sub consider_going_dormant {
         {
             #go dormant
             # Remove CLOEXEC
-            use Data::Dumper;
-warn Dumper($self->{'backchannel'});
             foreach my $fileno ( keys %{ $self->{backchannel}->{fileno_to_fh} } ) {
                 my $fh = $self->{backchannel}->{fileno_to_fh}->{$fileno};
                 $current_flags{$fileno} = fcntl( $fh, Fcntl::F_GETFD(), 0 ) or warn "Failed to get flags on fileno: $fileno";
