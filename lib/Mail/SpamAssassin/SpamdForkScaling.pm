@@ -342,6 +342,9 @@ sub main_server_poll {
     if ($now - $self->{server_last_ping} > TOUT_PING_INTERVAL) {
       $self->main_ping_kids($now);
     }
+  
+    $self->consider_going_dormant();
+
     return;
   }
 
@@ -354,6 +357,7 @@ sub main_server_poll {
       # there are no idle kids!  we're overloaded, mark that
       $self->{overloaded} = 1;
     }
+    $self->{number_of_dormant_loops} = 0;
     return;
   }
 
@@ -389,6 +393,19 @@ sub main_server_poll {
   # now that we've ordered some kids to accept any new connections,
   # increase/decrease the pool as necessary
   $self->adapt_num_children();
+}
+
+sub consider_going_dormant {
+    my ($self) = @_;
+
+    my $NUMBER_OF_LOOPS_TO_GO_DORMANT  = 3;
+    if ( ++$self->{number_of_dormant_loops} == $NUMBER_OF_LOOPS_TO_GO_DORMANT ) {
+        {
+            #go dormant
+            exec '/usr/local/cpanel/libexec/spamd-dormant', '--listen=' . join( ',', sort keys %{$self->{backchannel}->{fileno_to_fh}} );    # Do not add or die as we want to continue running if this fails
+        }
+        warn "prefork: failed to exec /usr/local/cpanel/libexec/spamd-dormant: $!";
+    }
 }
 
 sub main_ping_kids {
