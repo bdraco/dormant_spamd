@@ -402,6 +402,13 @@ sub consider_going_dormant {
     my ($self) = @_;
 
     if ( ++$self->{number_of_dormant_loops} == $NUMBER_OF_LOOPS_TO_GO_DORMANT ) {
+        if ( grep { $self->{kids}->{$_} != PFSTATE_IDLE } keys %{$self->{kids}}) {
+            warn "prefork: no new recent connections but non-idle children";
+            $self->{number_of_dormant_loops}--;
+            return;
+        };
+        
+
         my %current_flags;
         my @cmdline;
         my @listen_args;
