@@ -789,6 +789,7 @@ push(@listen_socket_specs, 'localhost')  if !@listen_socket_specs;
 for (@listen_socket_specs) {
   my $socket_specs = $_;
 
+warn "spamd: socket_specs:[$socket_specs]";
   $socket_specs = '*'  if $socket_specs eq '';  # empty implies all interfaces
 
   local($1,$2,$3,$4,$5,$6);
@@ -801,6 +802,15 @@ for (@listen_socket_specs) {
     # abstracted out the setup-retry code
     dbg("spamd: unix socket: %s", $path);
     server_sock_setup(\&server_sock_setup_unix, $socket_specs, $path);
+  } elsif ($socket_specs =~
+           m{^ (?: (ssl) : )?
+               ( [0-9]+ ) \z }xsi) {  # unix socket - absolute path
+    my($proto,$fd) = ($1, $2);
+    $proto = 'ssl'  if defined $opt{'ssl'} || defined $opt{'ssl-port'};
+    $proto = !defined($proto) ? '' : lc($proto);
+    # abstracted out the setup-retry code
+    dbg("spamd: fd socket: %s", $socket_specs);
+    server_sock_setup_fd($socket_specs, $fd, $proto eq 'ssl' ? 1 : 0);
 
   } elsif ($socket_specs =~
            m{^ (?: (ssl) : )?
@@ -931,6 +941,51 @@ sub server_sock_setup {
 }
 
 # ---------------------------------------------------------------------------
+
+sub server_sock_setup_fd {
+    my ( $socket_specs, $fd, $ssl ) = @_;
+
+    my $srvsocket;
+    open( $srvsocket, '+<&=' . $fd ) || die "Could not open fd $fd: $!";
+    my $sockname = getsockname($srvsocket);
+    my ( $sock_type, $sock_port ) = unpack( 'Sn10', $sockname );
+    if ( $sock_type == &AF_INET6 ) {
+        bless $srvsocket, 'IO::Socket::INET6';
+    }
+    elsif ( $sock_type == &AF_INET ) {
+        bless $srvsocket, 'IO::Socket::INET';
+    }
+    else {
+        bless $srvsocket, 'IO::Socket::UNIX';
+    }
+
+    # TODO : SSL
+    if ( $srvsocket->isa('IO::Socket::UNIX') ) {
+        push(
+            @listen_sockets,
+            {
+                specs  => $socket_specs,
+                path   => $srvsocket->hostpath(),
+                socket => $srvsocket,
+                fd     => $fd
+            }
+        );
+
+    }
+    else {
+        push(
+            @listen_sockets,
+            {
+                specs   => $socket_specs,
+                ip_addr => $srvsocket->sockaddr(),
+                port    => $sock_port,
+                socket  => $srvsocket,
+                fd      => $fd
+            }
+        );
+    }
+    1;
+}
 
 # Create the sockets
 sub server_sock_setup_unix {

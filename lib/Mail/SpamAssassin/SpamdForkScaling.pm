@@ -24,6 +24,7 @@ use warnings;
 # use bytes;
 use re 'taint';
 use Errno qw();
+use Fcntl qw();
 
 use Mail::SpamAssassin::Util qw(am_running_on_windows);
 use Mail::SpamAssassin::Logger;
@@ -342,6 +343,9 @@ sub main_server_poll {
     if ($now - $self->{server_last_ping} > TOUT_PING_INTERVAL) {
       $self->main_ping_kids($now);
     }
+  
+    $self->consider_going_dormant();
+
     return;
   }
 
@@ -354,6 +358,7 @@ sub main_server_poll {
       # there are no idle kids!  we're overloaded, mark that
       $self->{overloaded} = 1;
     }
+    $self->{number_of_dormant_loops} = 0;
     return;
   }
 
@@ -389,6 +394,56 @@ sub main_server_poll {
   # now that we've ordered some kids to accept any new connections,
   # increase/decrease the pool as necessary
   $self->adapt_num_children();
+}
+
+my $NUMBER_OF_LOOPS_TO_GO_DORMANT = 3;
+
+sub consider_going_dormant {
+    my ($self) = @_;
+
+    if ( ++$self->{number_of_dormant_loops} == $NUMBER_OF_LOOPS_TO_GO_DORMANT ) {
+        if ( grep { $self->{kids}->{$_} != PFSTATE_IDLE } keys %{$self->{kids}}) {
+            warn "prefork: no new recent connections but non-idle children";
+            $self->{number_of_dormant_loops}--;
+            return;
+        };
+        
+
+        my %current_flags;
+        my @cmdline;
+        my @listen_args;
+        {
+            #go dormant
+            # Remove CLOEXEC
+            foreach ( my $i = 0; $i <= $#{ $self->{server_fh} }; $i++ ) {
+                my $fileno = $self->{server_fileno}->[$i];
+                my $fh     = $self->{server_fh}->[$i];
+                $current_flags{$fileno} = fcntl( $fh, Fcntl::F_GETFD(), 0 ) or warn "Failed to get flags on fileno: $fileno";
+                my $new_flags = $current_flags{$fileno} & ~&Fcntl::FD_CLOEXEC;
+                fcntl( $fh, Fcntl::F_SETFD(), $new_flags ) or warn "Failed to set flags on fileno: $fileno";
+                push @listen_args, ((scalar ref $fh) =~ m{ssl}i ? 'ssl:' : '') . $fileno;
+            }
+            @cmdline = ( '/usr/local/cpanel/libexec/spamd-dormant', '--listen=' . join( ',', @listen_args ) );    # Do not add or die as we want to continue running if this fails
+            warn "preform: exec: @cmdline";
+            exec(@cmdline);
+        }
+
+        warn "prefork: failed to exec @cmdline: $!";
+
+        # Restore flags
+        foreach ( my $i = 0; $i <= $#{ $self->{server_fh} }; $i++ ) {
+            my $fileno = $self->{server_fileno}->[$i];
+            my $fh     = $self->{server_fh}->[$i];
+
+            fcntl( $fh, Fcntl::F_SETFD(), $current_flags{$fileno} ) or warn "Failed to restore flags on fileno: $fileno";
+
+        }
+        $self->{number_of_dormant_loops} = 0;
+    }
+
+    warn "prefork: dormant loops: $self->{number_of_dormant_loops}";
+
+    return;
 }
 
 sub main_ping_kids {
