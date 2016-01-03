@@ -417,6 +417,7 @@ sub consider_going_dormant {
                 push @listen_args, ((scalar ref $fh) =~ m{ssl}i ? 'ssl:' : '') . $fileno;
             }
             @cmdline = ( '/usr/local/cpanel/libexec/spamd-dormant', '--listen=' . join( ',', @listen_args ) );    # Do not add or die as we want to continue running if this fails
+            warn "preform: exec: @cmdline";
             exec(@cmdline);
         }
 
