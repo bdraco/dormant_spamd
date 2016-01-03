@@ -414,7 +414,7 @@ sub consider_going_dormant {
                 $current_flags{$fileno} = fcntl( $fh, Fcntl::F_GETFD(), 0 ) or warn "Failed to get flags on fileno: $fileno";
                 my $new_flags = $current_flags{$fileno} & ~&Fcntl::FD_CLOEXEC;
                 fcntl( $fh, Fcntl::F_SETFD(), $new_flags ) or warn "Failed to set flags on fileno: $fileno";
-                push @listen_args, $fileno . ':' . scalar ref $fh;
+                push @listen_args, ((scalar ref $fh) =~ m{ssl}i ? 'ssl:' : '') . $fileno;
             }
             @cmdline = ( '/usr/local/cpanel/libexec/spamd-dormant', '--listen=' . join( ',', @listen_args ) );    # Do not add or die as we want to continue running if this fails
             exec(@cmdline);
